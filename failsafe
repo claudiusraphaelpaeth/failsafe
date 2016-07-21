@@ -1,0 +1,92 @@
+#!/bin/sh
+# PROVIDE: failsafe
+# REQUIRE: FILESYSTEMS
+# KEYWORD: nojail 
+
+# Usage:
+#
+# Add 'failsafe_enable="YES"' to rc.conf
+# Add 'failsafe_grace="NN"' to rc.conf to configure the 'grace period' before a reboot occurs
+# zfs set failsafe:be=BENAME <system>  for to the failsafe boot environment on your root fs.
+#
+# touch /failsafe IN THE ENVIRONMENT YOU WILL BE BOOTING INTO. Reboot. If you
+# don't delete the /failsafe file within the grace period (or update the
+# failsafe:be value to match the active one), the system will set the
+# "failsafe" BE value and then reboot.
+
+. /etc/rc.subr
+
+name=failsafe
+rcvar=failsafe_enable
+
+start_cmd="${name}_start"
+
+load_rc_config $name
+: ${failsafe_enable:=no}
+: ${failsafe_grace:=300}
+
+PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/sbin
+
+get_safe_be() {
+	zfs get -r -s local -t filesystem -o value -H failsafe:be
+}
+
+get_active_be() {
+	beadm list -H | awk '{if(match($2, "N")) print $1}'
+}
+
+get_next_be() {
+	beadm list -H | awk '{if(match($2, "R")) print $1}'
+}
+
+be_is_active() {
+	test "$1" = "$(get_active_be)"
+}
+
+safe_is_active() {
+	be_is_active $(get_safe_be)
+}
+
+be_exists() {
+	beadm list -H | cut -f 1 | egrep -q "^$1\$"
+       	if [ $? -ne 0 ]; then
+		echo "Desired BE [$1] does not exist!"
+		return 1
+	fi
+}
+
+failsafe_actual() {
+	# Called if failsafe exists, and the safe is not active.
+
+	# Make sure the one we will change to exists
+	be_exists $(get_safe_be) || exit 1
+
+	# Grace period. Exit if /failsafe is removed.
+	sleep ${failsafe_grace} && [ -e /failsafe ] || exit 0
+
+	# Don't let BE change under us. Save value for remainder of steps.
+	SAFE_BE = $(get_safe_be)
+
+	# Make sure the one we will change to exists
+	be_exists ${SAFE_BE} || exit 2
+
+	# If the desired BE is already active, exit.
+	be_is_active ${SAFE_BE} && exit 0
+
+	# Do it.
+	beadm activate ${SAFE_BE} && sync && shutdown -r now
+}
+
+failsafe_start() {
+	# Do we have anything to do?
+	[ -e /failsafe ] || exit 0
+
+	# Is the safe one already active? If so, exit silently.
+	safe_is_active && exit 0
+
+	# Spawn into the background the actual sleep and check
+	(failsafe_actual) 2>&1 < /dev/null | \
+		logger -p daemon.notice -t failsafe &
+}
+
+run_rc_command "$@"
