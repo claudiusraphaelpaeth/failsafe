@@ -28,7 +28,7 @@ load_rc_config $name
 PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/sbin
 
 get_safe_be() {
-	zfs get -r -s local -t filesystem -o value -H failsafe:be
+	zfs get -r -s local -t filesystem -o value -H failsafe:be | head -n 1
 }
 
 get_active_be() {
@@ -73,7 +73,7 @@ failsafe_actual() {
 	# If the desired BE is already active, exit.
 	be_is_active ${SAFE_BE} && exit 0
 
-	# Do it.
+	# Do it. sync because I'm paranoid.
 	beadm activate ${SAFE_BE} && sync && shutdown -r now
 }
 
