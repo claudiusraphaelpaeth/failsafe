@@ -65,7 +65,7 @@ failsafe_actual() {
 	sleep ${failsafe_grace} && [ -e /failsafe ] || exit 0
 
 	# Don't let BE change under us. Save value for remainder of steps.
-	SAFE_BE = $(get_safe_be)
+	SAFE_BE=$(get_safe_be)
 
 	# Make sure the one we will change to exists
 	be_exists ${SAFE_BE} || exit 2
